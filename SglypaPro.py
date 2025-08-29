@@ -8,25 +8,19 @@ import random
 import re
 import asyncio
 from collections import defaultdict
-import torch
-import torch.nn as nn
-from transformers import GPT2LMHeadModel, GPT2Tokenizer
 
 logger = logging.getLogger(__name__)
 
 @loader.tds
-class NeuralSglypaMod(loader.Module):
-    """Нейросетевой модуль сглыпы с PyTorch и GPT"""
+class SmartSglypaMod(loader.Module):
+    """Умный модуль сглыпы с псевдо-нейросетевой логикой"""
     
     strings = {
-        "name": "NeuralSglypa",
-        "on": "✅ Нейросетевой режим сглыпы включен! GPT модель активирована",
+        "name": "SmartSglypa",
+        "on": "✅ Умный режим сглыпы включен! AI логика активирована",
         "off": "❌ Режим сглыпы выключен",
         "already_on": "⚠️ Режим уже включен",
         "already_off": "⚠️ Режим уже выключен",
-        "model_loading": "🔄 Загружаю нейросетевую модель...",
-        "model_ready": "✅ GPT модель готова к генерации!",
-        "model_error": "❌ Ошибка загрузки модели"
     }
 
     def __init__(self):
@@ -38,111 +32,88 @@ class NeuralSglypaMod(loader.Module):
                 validator=loader.validators.Integer(minimum=1, maximum=100)
             ),
             loader.ConfigValue(
-                "use_neural",
-                True,
-                "Использовать нейросеть",
-                validator=loader.validators.Boolean()
-            ),
-            loader.ConfigValue(
-                "temperature",
-                0.9,
-                "Температура генерации",
-                validator=loader.validators.Float(minimum=0.1, maximum=2.0)
+                "ai_intelligence",
+                80,
+                "Уровень интеллекта AI",
+                validator=loader.validators.Integer(minimum=1, maximum=100)
             )
         )
         self.active_chats = set()
         self.chat_history = defaultdict(list)
-        self.model = None
-        self.tokenizer = None
-        self.model_loaded = False
+        self.markov_chains = defaultdict(dict)
 
     async def client_ready(self, client, db):
         self._client = client
-        # Загружаем модель в фоне
-        asyncio.create_task(self.load_model())
-
-    async def load_model(self):
-        """Загружаем нейросетевую модель"""
-        try:
-            logger.info(self.strings["model_loading"])
-            self.tokenizer = GPT2Tokenizer.from_pretrained('sberbank-ai/rugpt3small_based_on_gpt2')
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-            self.model = GPT2LMHeadModel.from_pretrained('sberbank-ai/rugpt3small_based_on_gpt2')
-            self.model_loaded = True
-            logger.info(self.strings["model_ready"])
-        except Exception as e:
-            logger.error(f"{self.strings['model_error']}: {e}")
-            self.model_loaded = False
 
     def add_to_history(self, chat_id, text):
-        """Добавляем сообщение в историю"""
+        """Добавляем сообщение в историю и строим марковскую цепь"""
         if text and len(text) > 2:
             words = re.findall(r'\b[а-яё]{2,}\b', text.lower())
             for word in words:
                 if word not in ['это', 'вот', 'как', 'что', 'там', 'здесь']:
                     self.chat_history[chat_id].append(word)
+            
+            # Строим простую марковскую цепь для AI
+            if len(words) > 1:
+                for i in range(len(words) - 1):
+                    current_word = words[i]
+                    next_word = words[i + 1]
+                    if current_word not in self.markov_chains[chat_id]:
+                        self.markov_chains[chat_id][current_word] = []
+                    self.markov_chains[chat_id][current_word].append(next_word)
 
-    def generate_neural_sglypa(self, chat_id):
-        """Генерируем сглыпу через нейросеть"""
-        if not self.model_loaded:
-            return self.generate_fallback_sglypa(chat_id)
-        
-        try:
-            # Берем контекст из истории чата
-            context_words = []
-            if chat_id in self.chat_history and self.chat_history[chat_id]:
-                context_words = random.sample(self.chat_history[chat_id], 
-                                           min(5, len(self.chat_history[chat_id])))
+    def generate_ai_sglypa(self, chat_id):
+        """Генерируем сглыпу с псевдо-AI логикой"""
+        # Используем марковскую цепь если есть данные
+        if (chat_id in self.markov_chains and self.markov_chains[chat_id] and 
+            random.randint(1, 100) <= self.config["ai_intelligence"]):
             
-            # Создаем промпт для нейросети
-            prompt = "Сглыпа: " + " ".join(context_words) + " "
-            
-            # Токенизируем
-            inputs = self.tokenizer.encode(prompt, return_tensors='pt', max_length=50, truncation=True)
-            
-            # Генерируем текст
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    inputs,
-                    max_length=random.randint(20, 50),
-                    num_return_sequences=1,
-                    temperature=self.config["temperature"],
-                    do_sample=True,
-                    pad_token_id=self.tokenizer.eos_token_id,
-                    top_k=50,
-                    top_p=0.9,
-                    repetition_penalty=1.2
-                )
-            
-            # Декодируем результат
-            generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-            
-            # Извлекаем только сгенерированную часть
-            result = generated_text.replace(prompt, "").strip()
-            
-            # Чистим результат
-            result = re.sub(r'[^а-яёА-ЯЁ\s]', '', result)
-            result = ' '.join(result.split()[:random.randint(3, 8)])
-            
-            return result.capitalize()
-            
-        except Exception as e:
-            logger.error(f"Ошибка нейросети: {e}")
+            try:
+                # Выбираем случайное стартовое слово
+                current_word = random.choice(list(self.markov_chains[chat_id].keys()))
+                result = [current_word]
+                
+                # Генерируем цепочку слов
+                for _ in range(random.randint(2, 6)):
+                    if (current_word in self.markov_chains[chat_id] and 
+                        self.markov_chains[chat_id][current_word]):
+                        next_word = random.choice(self.markov_chains[chat_id][current_word])
+                        result.append(next_word)
+                        current_word = next_word
+                    else:
+                        break
+                
+                # Добавляем префикс
+                prefixes = [
+                    "AI: ", "Нейросеть: ", "ГПТ: ", "Мозг: ", "🤖 ", "🧠 ",
+                    "Вот что я думаю: ", "Мой анализ: ", "Генерирую: "
+                ]
+                
+                return random.choice(prefixes) + " ".join(result).capitalize()
+                
+            except Exception as e:
+                logger.error(f"Ошибка AI: {e}")
+                return self.generate_fallback_sglypa(chat_id)
+        else:
             return self.generate_fallback_sglypa(chat_id)
 
     def generate_fallback_sglypa(self, chat_id):
-        """Резервная генерация если нейросеть не работает"""
+        """Классическая генерация сглыпы"""
         patterns = [
             "{} {} {}", "{} {} {} {}", "{} {} {} {} {}", 
-            "блядь {} {}", "нахуй {} {}", "пиздец {} {}",
-            "ёбаный {} {}", "заебись {} {}", "отъебись {} {}",
-            "а вот и {} {}", "и тут {} {}", "внезапно {} {}"
+            "{} {} {} {} {} {}", "{} {} {} {} {} {} {}",
+            "блядь {} {}", "нахуй {} {}", "пиздец {} {}", "ёбаный {} {}",
+            "заебись {} {}", "отъебись {} {}", "ебать {} {}", "хуярить {} {}",
+            "а вот и {} {}", "и тут {} {}", "внезапно {} {}", "неожиданно {} {}",
+            "как же {} {}", "ох уж эта {} {}", "что за {} {}", "эта {} {}",
+            "моя {} {}", "твоя {} {}", "наша {} {}", "посмотрите {} {}",
+            "кажется {} {}", "наверное {} {}", "возможно {} {}", "интересно {} {}"
         ]
         
         if chat_id in self.chat_history and self.chat_history[chat_id]:
             words = list(self.chat_history[chat_id])
         else:
-            words = ["сглыпа", "пидор", "жопа", "хуй", "пизда", "еблан"]
+            words = ["сглыпа", "пидор", "жопа", "хуй", "пизда", "еблан", "мудак"]
         
         pattern = random.choice(patterns)
         num_slots = pattern.count("{}")
@@ -155,11 +126,16 @@ class NeuralSglypaMod(loader.Module):
             else:
                 result = result.replace("{}", "сглыпа", 1)
         
+        # Добавляем AI метку если интеллект высокий
+        if random.randint(1, 100) <= self.config["ai_intelligence"]:
+            ai_tags = ["[AI]", "[GPT]", "[Нейросеть]", "[Мозг]", "🤖", "🧠"]
+            result = f"{random.choice(ai_tags)} {result}"
+        
         return result.capitalize()
 
     @loader.command()
     async def sglypa(self, message):
-        """Сгенерировать сглыпу через нейросеть - .sglypa [on/off]"""
+        """Сгенерировать сглыпу - .sglypa [on/off/status/clear]"""
         args = utils.get_args_raw(message)
         chat_id = utils.get_chat_id(message)
         
@@ -167,10 +143,7 @@ class NeuralSglypaMod(loader.Module):
             self.add_to_history(chat_id, message.text)
 
         if not args:
-            if self.config["use_neural"] and self.model_loaded:
-                sglypa_text = self.generate_neural_sglypa(chat_id)
-            else:
-                sglypa_text = self.generate_fallback_sglypa(chat_id)
+            sglypa_text = self.generate_ai_sglypa(chat_id)
             await utils.answer(message, sglypa_text)
             return
             
@@ -189,19 +162,36 @@ class NeuralSglypaMod(loader.Module):
                 await utils.answer(message, self.strings("off"))
                 
         elif args.lower() == "status":
-            status = "✅ Модель загружена" if self.model_loaded else "❌ Модель не загружена"
-            await utils.answer(message, f"Статус нейросети: {status}")
+            # Статистика по чату
+            chat_words = len(self.chat_history.get(chat_id, []))
+            chat_chains = len(self.markov_chains.get(chat_id, {}))
+            active_status = "✅ Включен" if chat_id in self.active_chats else "❌ Выключен"
+            
+            status_text = (
+                f"📊 Статус сглыпы:\n"
+                f"{active_status}\n"
+                f"🗣️ Слов в истории: {chat_words}\n"
+                f"🧠 AI цепочек: {chat_chains}\n"
+                f"🎯 Шанс ответа: {self.config['reply_chance']}%\n"
+                f"🤖 Умность AI: {self.config['ai_intelligence']}%"
+            )
+            await utils.answer(message, status_text)
+            return
+                
+        elif args.lower() == "clear":
+            if chat_id in self.chat_history:
+                self.chat_history[chat_id].clear()
+                self.markov_chains[chat_id].clear()
+            await utils.answer(message, "🗑️ История и AI данные очищены")
+            return
                 
         else:
-            if self.config["use_neural"] and self.model_loaded:
-                sglypa_text = self.generate_neural_sglypa(chat_id)
-            else:
-                sglypa_text = self.generate_fallback_sglypa(chat_id)
+            sglypa_text = self.generate_ai_sglypa(chat_id)
             await utils.answer(message, sglypa_text)
 
     @loader.watcher()
     async def watcher(self, message):
-        """Отслеживаем сообщения с нейросетевыми ответами"""
+        """Отслеживаем сообщения с AI ответами"""
         chat_id = utils.get_chat_id(message)
         
         if chat_id not in self.active_chats:
@@ -214,26 +204,16 @@ class NeuralSglypaMod(loader.Module):
         
         # Реагируем на слово "сглыпа"
         if re.search(r'сглыпа', message.text, re.IGNORECASE):
-            if self.config["use_neural"] and self.model_loaded:
-                sglypa_text = self.generate_neural_sglypa(chat_id)
-            else:
-                sglypa_text = self.generate_fallback_sglypa(chat_id)
+            sglypa_text = self.generate_ai_sglypa(chat_id)
             await message.reply(sglypa_text)
             return
             
         # Обычный шанс ответа
         if random.randint(1, 100) <= self.config["reply_chance"]:
-            if self.config["use_neural"] and self.model_loaded:
-                sglypa_text = self.generate_neural_sglypa(chat_id)
-            else:
-                sglypa_text = self.generate_fallback_sglypa(chat_id)
+            sglypa_text = self.generate_ai_sglypa(chat_id)
             await message.reply(sglypa_text)
 
     async def on_unload(self):
-        """Выгрузка модели"""
-        if self.model:
-            del self.model
-        if self.tokenizer:
-            del self.tokenizer
         self.active_chats.clear()
         self.chat_history.clear()
+        self.markov_chains.clear()
