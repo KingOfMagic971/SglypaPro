@@ -1,5 +1,5 @@
 # SglypaPro
-Модуль предоставляет все функции как у бота Сглыпа.
+Модуль предоставляет все функции как у бота  
 # -*- coding: utf-8 -*-
 # meta developer: @Rezoxss
 # scope: hikka_only
@@ -8,29 +8,47 @@ from .. import loader, utils
 import logging
 import random
 import re
-from collections import deque
+import asyncio
+import time
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
 @loader.tds
-class SglypaMod(loader.Module):
-    """Модуль для генерации сглып как у @sglypa_tg_bot"""
+class SmartSglypaMod(loader.Module):
+    """Умный модуль сглыпы с ChatGPT логикой"""
     
     strings = {
-        "name": "Sglypa",
+        "name": "SmartSglypa",
         "on": "✅ Режим сглыпы включен! Теперь я буду отвечать сглыпами",
         "off": "❌ Режим сглыпы выключен",
         "already_on": "⚠️ Режим сглыпы уже включен",
         "already_off": "⚠️ Режим сглыпы уже выключен",
+        "cleared": "🗑️ История чата очищена",
+        "stats": "📊 Сообщений в истории: {}"
     }
 
     def __init__(self):
+        self.config = loader.ModuleConfig(
+            loader.ConfigValue(
+                "reply_chance",
+                40,
+                "Шанс ответа в % (40%)",
+                validator=loader.validators.Integer(minimum=1, maximum=100)
+            ),
+            loader.ConfigValue(
+                "use_ai",
+                True,
+                "Использовать умные ответы",
+                validator=loader.validators.Boolean()
+            )
+        )
         self.active = False
-        self.chat_history = {}
+        self.chat_history = defaultdict(list)  # Бесконечная история
         self.words_db = self.load_words_database()
 
     def load_words_database(self):
-        """База слов для генерации сглып"""
+        """База слов для умных ответов"""
         return {
             "nouns": [
                 "кошка", "собака", "птица", "рыба", "мышь", "хомяк", "кролик", 
@@ -42,8 +60,7 @@ class SglypaMod(loader.Module):
                 "стол", "стул", "кровать", "шкаф", "полка", "лампа", "окно",
                 "дверь", "компьютер", "телефон", "книга", "тетрадь", "ручка",
                 "человек", "друг", "брат", "сестра", "мама", "папа", "дед",
-                "голова", "рука", "нога", "спина", "живот", "нос", "ухо",
-                "придурок", "болван", "чудак", "странник", "мечтатель", "фантазер"
+                "голова", "рука", "нога", "спина", "живот", "нос", "ухо"
             ],
             "adjectives": [
                 "красный", "синий", "зеленый", "желтый", "оранжевый", "фиолетовый",
@@ -70,100 +87,23 @@ class SglypaMod(loader.Module):
         self._client = client
 
     def add_to_history(self, chat_id, text):
-        """Добавляем слова в историю чата"""
-        if chat_id not in self.chat_history:
-            self.chat_history[chat_id] = deque(maxlen=50)
-        
-        if not text:
-            return
-            
-        words = re.findall(r'\b[а-яё]{3,}\b', text.lower())
-        for word in words:
-            if word not in ['это', 'вот', 'как', 'что', 'там', 'здесь', 'тут']:
-                self.chat_history[chat_id].append(word)
+        """Добавляем сообщение в бесконечную историю"""
+        if text and len(text) > 2:
+            words = re.findall(r'\b[а-яё]{3,}\b', text.lower())
+            for word in words:
+                if word not in ['это', 'вот', 'как', 'что', 'там', 'здесь']:
+                    self.chat_history[chat_id].append(word)
 
-    def get_chat_word(self, chat_id):
-        """Берём слово из истории чата"""
+    def get_chat_words(self, chat_id, count=3):
+        """Получаем слова из истории чата"""
         if chat_id in self.chat_history and self.chat_history[chat_id]:
-            return random.choice(list(self.chat_history[chat_id]))
-        return None
-
-    def generate_sglypa(self, chat_id=None):
-        """Генерируем сглыпу"""
-        patterns = [
-            "А вот и {} {} {}", "И тут {} {} {}", "Внезапно {} {} {}",
-            "Неожиданно {} {} {}", "Как же {} {} {}", "Ох уж эта {} {} {}",
-            "Что за {} {} {}", "Эта {} {} {}", "Моя {} {} {}", "Твоя {} {} {}",
-            "Наша {} {} {}", "{} {} {} прямо сейчас", "{} {} {} снова",
-            "{} {} {} опять", "Посмотрите, {} {} {}", "Кажется, {} {} {}",
-            "Наверное, {} {} {}", "Возможно, {} {} {}", "{} {} {} в чате",
-            "{} {} {} здесь", "Ничего себе, {} {} {}", "Ух ты, {} {} {}",
-            "Вау, {} {} {}", "Ого, {} {} {}", "Вот это {} {} {}"
-        ]
-
-        chat_word = self.get_chat_word(chat_id)
-        word1 = chat_word if chat_word else random.choice(self.words_db["nouns"])
-        word2 = random.choice(self.words_db["adjectives"])
-        word3 = random.choice(self.words_db["verbs"])
-
-        return random.choice(patterns).format(word2, word1, word3)
-
-    @loader.command()
-    async def sglypa(self, message):
-        """Включить/выключить режим или сгенерировать сглыпу - .sglypa on/off"""
-        args = utils.get_args_raw(message)
-        chat_id = utils.get_chat_id(message)
-        
-        if message.text:
-            self.add_to_history(chat_id, message.text)
-
-        if not args:
-            sglypa_text = self.generate_sglypa(chat_id)
-            await utils.answer(message, sglypa_text)
-            return
-            
-        if args.lower() == "on":
-            if self.active:
-                await utils.answer(message, self.strings("already_on"))
+            history_words = list(self.chat_history[chat_id])
+            if len(history_words) >= count:
+                return random.sample(history_words, count)
             else:
-                self.active = True
-                await utils.answer(message, self.strings("on"))
-                
-        elif args.lower() == "off":
-            if not self.active:
-                await utils.answer(message, self.strings("already_off"))
-            else:
-                self.active = False
-                await utils.answer(message, self.strings("off"))
-                
-        else:
-            sglypa_text = self.generate_sglypa(chat_id)
-            await utils.answer(message, sglypa_text)
-
-    @loader.watcher()
-    async def watcher(self, message):
-        """Отслеживаем сообщения для ответов"""
-        if not self.active:
-            return
-            
-        chat_id = utils.get_chat_id(message)
-        
-        # Не отвечаем на свои сообщения, команды и пустые
-        if not message.text or message.out or message.text.startswith('.'):
-            return
-            
-        self.add_to_history(chat_id, message.text)
-        
-        # 35% шанс ответа
-        if random.randint(1, 100) > 35:
-            return
-            
-        try:
-            sglypa_text = self.generate_sglypa(chat_id)
-            await message.reply(sglypa_text)
-        except Exception as e:
-            logger.error(f"Ошибка: {e}")
-
-    async def on_unload(self):
-        """Очистка при выгрузке модуля"""
-        self.chat_history.clear()
+                # Дополняем случайными словами если не хватает
+                result = history_words.copy()
+                while len(result) < count:
+                    result.append(random.choice(self.words_db["nouns"]))
+                return result
+        return
